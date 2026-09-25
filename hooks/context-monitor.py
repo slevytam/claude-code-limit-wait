@@ -56,6 +56,9 @@ from datetime import datetime, timedelta
 # additionalContext is always English. Set CLAUDE_HOOK_USER_LANG=ja in
 # settings.json's "env" block for Japanese.
 USER_LANG = os.environ.get("CLAUDE_HOOK_USER_LANG", "en").strip().lower()
+# Local addition: CLAUDE_HOOK_COMPACT_ADVISORIES=0 drops the compact-band labels,
+# the band advisories and the subagent watch (compact-loop not installed as a skill).
+COMPACT_ADVISORIES = os.environ.get("CLAUDE_HOOK_COMPACT_ADVISORIES", "1").strip() != "0"
 # Reset times are rendered in local time; this is the local UTC offset label.
 TZ_LABEL = datetime.now().astimezone().strftime("%z")
 
@@ -617,7 +620,7 @@ def main() -> None:
     band_label = ""
     band_label_ja = ""
     pct_now = tokens / window * 100 if window else None
-    if pct_now is not None:
+    if pct_now is not None and COMPACT_ADVISORIES:
         band = band_for(pct_now, window, is_subagent)
         if band:
             band_label = f" [{BAND_LABEL[band[1]]}]"
@@ -631,7 +634,7 @@ def main() -> None:
     # Leader-side watch over active subagents' context fill.
     watch_en: list[str] = []
     watch_ja: list[str] = []
-    if not is_subagent:
+    if not is_subagent and COMPACT_ADVISORIES:
         try:
             watch_en, watch_ja = subagent_watch(
                 transcript_path, consider, time.time())

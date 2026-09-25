@@ -151,6 +151,43 @@ def consecutive_pings(path):
     return n
 
 
+def keepalive_switch(path):
+    """Local addition. The latest "no keepalive" (False) or "keepalive on"
+    (True) typed on a line of its own in a human message; None if neither
+    is in the tail."""
+    try:
+        for d in reversed(_tail_entries(path)):
+            if d.get("type") != "user" or d.get("isCompactSummary"):
+                continue
+            txt = _user_text(d)
+            if txt.lstrip().startswith("<task-notification>"):
+                continue
+            for line in reversed(txt.splitlines()):
+                s = line.strip().rstrip(".!").lower()
+                if s == "no keepalive":
+                    return False
+                if s == "keepalive on":
+                    return True
+    except OSError:
+        pass
+    return None
+
+
+def compact_unanswered(path):
+    """Local addition. True when a compaction is the latest thing in the
+    transcript and no model reply has followed it: nothing after it is
+    cached yet, so a ping would pay a fresh cache write, not a refresh."""
+    try:
+        for d in reversed(_tail_entries(path)):
+            if d.get("type") == "assistant" and (d.get("message") or {}).get("model") != "<synthetic>":
+                return False
+            if d.get("type") == "system" and d.get("subtype") == "compact_boundary":
+                return True
+    except OSError:
+        pass
+    return False
+
+
 ap = argparse.ArgumentParser()
 ap.add_argument("--idle-seconds", type=int, default=3300)  # 55 min: 5 min under the 1h TTL
 ap.add_argument("--poll", type=int, default=30)
@@ -169,6 +206,21 @@ lock = os.path.expanduser(f"~/.claude/.cache-keepalive-{sid}.pid")
 me = str(os.getpid())
 with open(lock, "w", encoding="utf-8") as f:
     f.write(me)
+
+# Local addition: "no keepalive" in a thread turns its pings off for good
+# (a marker file, so it outlives the transcript tail); "keepalive on" undoes it.
+off = os.path.expanduser(f"~/.claude/.cache-keepalive-off-{sid}")
+switch = keepalive_switch(transcript)
+if switch is False:
+    open(off, "w").close()
+elif switch and os.path.exists(off):
+    os.remove(off)
+if os.path.exists(off):
+    try:
+        os.remove(lock)      # older instances see the lock gone and exit too
+    except OSError:
+        pass
+    sys.exit(0)
 
 while True:
     try:
@@ -190,6 +242,8 @@ while True:
             os.remove(lock)
         except OSError:
             pass
+        if compact_unanswered(transcript):
+            sys.exit(0)      # local addition: nothing cached since the compact; the next message caches it
         done = consecutive_pings(transcript)
         if done >= MAX_CONSECUTIVE_PINGS:
             sys.exit(0)      # the run is over; say nothing and let the session rest

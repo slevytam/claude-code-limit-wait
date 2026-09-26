@@ -152,9 +152,9 @@ def consecutive_pings(path):
 
 
 def keepalive_switch(path):
-    """Local addition. The latest "no keepalive" (False) or "keepalive on"
+    """Local addition. The latest "keepalive off" (False) or "keepalive on"
     (True) typed on a line of its own in a human message; None if neither
-    is in the tail."""
+    is in the tail. The older "no keepalive" still counts as off."""
     try:
         for d in reversed(_tail_entries(path)):
             if d.get("type") != "user" or d.get("isCompactSummary"):
@@ -164,7 +164,7 @@ def keepalive_switch(path):
                 continue
             for line in reversed(txt.splitlines()):
                 s = line.strip().rstrip(".!").lower()
-                if s == "no keepalive":
+                if s in ("keepalive off", "no keepalive"):
                     return False
                 if s == "keepalive on":
                     return True
@@ -207,7 +207,7 @@ me = str(os.getpid())
 with open(lock, "w", encoding="utf-8") as f:
     f.write(me)
 
-# Local addition: "no keepalive" in a thread turns its pings off for good
+# Local addition: "keepalive off" in a thread turns its pings off for good
 # (a marker file, so it outlives the transcript tail); "keepalive on" undoes it.
 off = os.path.expanduser(f"~/.claude/.cache-keepalive-off-{sid}")
 switch = keepalive_switch(transcript)
